@@ -1,4 +1,4 @@
-module rfs
+module github.com/de-alchmst/rfs
 
 go 1.22.2
 

@@ -1,7 +1,6 @@
 package rfs
 
 import (
-	"fmt"
 	"context"
 	"os"
 	"syscall"
@@ -123,24 +122,20 @@ func (h fileHandle) Write(ctx context.Context, req *fuse.WriteRequest, resp *fus
 	fileLen := len(*h.Contents)
 	reqLen  := len(req.Data)
 	spaceDelta := reqLen - fileLen + int(req.Offset) 
-	fmt.Println(req.Offset, " ", string(req.Data), " ", spaceDelta)
 	
 	if spaceDelta > 0 {
 		oldContents := *h.Contents
 		*h.Contents = make([]byte, fileLen + spaceDelta)
 		copy(*h.Contents, oldContents)
-		fmt.Println("Resized contents to", len(*h.Contents), "bytes: ", string(*h.Contents))
 	}
 
 	copy((*h.Contents)[req.Offset:], req.Data)
-	fmt.Println("Wrote data to contents: ", string(*h.Contents))
 	resp.Size = len(req.Data)
 	return nil
 }
 
 
 func (h fileHandle) Flush(ctx context.Context, req *fuse.FlushRequest) error {
-	fmt.Println("Wrote data to contents: ", string(*h.Contents))
 	if len(*h.Contents) != 0 {
 		h.Parent.OnWrite(*h.Contents)
 	}

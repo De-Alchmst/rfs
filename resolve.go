@@ -17,8 +17,8 @@ type entry struct {
 	Contents []byte
 	TTL int64
 	Status int
-	Using int
 	Err error
+	Flushed bool
 }
 
 
@@ -30,7 +30,6 @@ const (
 
 
 var (
-	DefaultTTL int64 = 60 * 60
 	entries = map[string]*entry{}
 )
 
@@ -40,13 +39,11 @@ func (p path) Attr(ctx context.Context, a *fuse.Attr) error {
 	// File
 	if ok { 
 
-		ent.Using += 1
 		for ent.Status == entryStatusProcessing {
 			time.Sleep(10 * time.Millisecond)
 		}
 
 		if ent.Status == entryStatusFailed {
-			ent.Using -= 1
 			return ent.Err
 		}
 
@@ -55,7 +52,6 @@ func (p path) Attr(ctx context.Context, a *fuse.Attr) error {
 		a.Size = uint64(len(ent.Contents))
 
 		ent.TTL = DefaultTTL
-		ent.Using -= 1
 
 	// Directory
 	} else {
@@ -73,13 +69,11 @@ func (p path) ReadAll(ctx context.Context) ([]byte, error) {
 		return nil, fuse.ENOENT
 	}
 
-	ent.Using += 1
 	for ent.Status == entryStatusProcessing {
 		time.Sleep(10 * time.Millisecond)
 	}
 
 	ent.TTL = DefaultTTL
-	ent.Using -= 1
 	if ent.Status == entryStatusOK {
 		return ent.Contents, nil
 	}
@@ -93,7 +87,6 @@ func (p path) Read(ctx context.Context, req *fuse.ReadRequest, resp *fuse.ReadRe
 		return fuse.ENOENT
 	}
 
-	ent.Using += 1
 	for ent.Status == entryStatusProcessing {
 		time.Sleep(10 * time.Millisecond)
 	}
@@ -105,7 +98,6 @@ func (p path) Read(ctx context.Context, req *fuse.ReadRequest, resp *fuse.ReadRe
 	fuseutil.HandleRead(req, resp, ent.Contents)
 
 	ent.TTL = DefaultTTL
-	ent.Using -= 1
 
 	return nil
 }
@@ -138,7 +130,7 @@ func handleEntry(name string) {
 			Contents: []byte{},
 			TTL: DefaultTTL,
 			Status: entryStatusProcessing,
-			Using: 0,
+			Flushed: false,
 		}
 
 		go fillEntry(entries[name], name)
