@@ -48,6 +48,11 @@ var (
 )
 
 
+func withContext(ctx context.Context, req fuse.Request) context.Context {
+	return context.WithValue(ctx, "PID", req.Hdr().Pid)
+}
+
+
 func (p path) Attr(ctx context.Context, a *fuse.Attr) error {
 	ent, ok := entries[p.FullPath]
 	// File

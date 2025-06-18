@@ -61,7 +61,11 @@ func MountFS(mountpoint, fsName, fsSubtype string, confs []DirNode, api Protocol
 	// Start serving in a goroutine
 	serveDone := make(chan error, 1)
 	go func() {
-		serveDone <- fs.Serve(c, filesystem{})
+		server := fs.New(c, &fs.Config{
+			Debug: fuse.Debug, // do nothing
+			WithContext: withContext, // store PID in context
+		})
+		serveDone <- server.Serve(filesystem{})
 	}()
 
 	// start cache flushing in a goroutine
