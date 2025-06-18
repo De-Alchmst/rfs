@@ -12,17 +12,13 @@ import (
 type filesystem struct{}
 // used for static api
 type root struct{}
-// used for resolving
-type path struct {
-	FullPath string
-}
 
 type fileHandle struct {
 	Parent *File
-	Inode uint64
 	// needs to be pointer, so that it can be resized
 	// because fileHandle is copied by value
 	Contents *[]byte
+	Writing bool
 }
 
 

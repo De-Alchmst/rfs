@@ -88,27 +88,28 @@ func (f File) Open(ctx context.Context, req *fuse.OpenRequest, resp *fuse.OpenRe
 	original := []byte{}
 
 	// Truncate sometimes
-	if req.Flags&fuse.OpenAppend != 0 && req.Flags&fuse.OpenWriteOnly != 0 && req.Flags&fuse.OpenTruncate == 0 {
+	if !((req.Flags&fuse.OpenWriteOnly != 0 && req.Flags&fuse.OpenAppend == 0) || req.Flags&fuse.OpenTruncate != 0) {
 		original, _ = f.OnRead()
 	}
 
-	contents := make([]byte, len(original))
-	copy(contents, original)
+	var contents []byte
+	if req.Flags.IsReadOnly() {
+		contents = original
+	} else {
+		contents = make([]byte, len(original))
+		copy(contents, original)
+	}
 
 	return fileHandle{
 		Parent:	  &f,
-		Inode:    f.Inode,
 		Contents: &contents,
+		Writing:  req.Flags&fuse.OpenWriteOnly == 0,
 	}, nil
 }
 
 
 func (h fileHandle) ReadAll(ctx context.Context) ([]byte, error) {
-	contents, err := h.Parent.OnRead()
-	if err != nil {
-		return nil, err
-	}
-	return contents, nil
+	return *h.Contents, nil
 }
 
 
@@ -136,7 +137,7 @@ func (h fileHandle) Write(ctx context.Context, req *fuse.WriteRequest, resp *fus
 
 
 func (h fileHandle) Flush(ctx context.Context, req *fuse.FlushRequest) error {
-	if len(*h.Contents) != 0 {
+	if h.Writing && len(*h.Contents) != 0{
 		h.Parent.OnWrite(*h.Contents)
 	}
 	return nil

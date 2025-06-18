@@ -1,6 +1,7 @@
 package rfs
 
 import (
+	"fmt"
 	"path/filepath"
 	"context"
 	"strings"
@@ -13,12 +14,25 @@ import (
 )
 
 
-type entry struct {
+// used for resolving
+type path struct {
+	FullPath string
+}
+
+type pathHandle struct {
+	Parent *pathEntry
+	// needs to be pointer, so that it can be resized
+	// because fileHandle is copied by value
+	Contents *[]byte
+	Writing bool
+	Name string
+}
+
+type pathEntry struct {
 	Contents []byte
 	TTL int64
 	Status int
 	Err error
-	Flushed bool
 }
 
 
@@ -30,7 +44,7 @@ const (
 
 
 var (
-	entries = map[string]*entry{}
+	entries = map[string]*pathEntry{}
 )
 
 
@@ -39,12 +53,9 @@ func (p path) Attr(ctx context.Context, a *fuse.Attr) error {
 	// File
 	if ok { 
 
-		for ent.Status == entryStatusProcessing {
-			time.Sleep(10 * time.Millisecond)
-		}
-
-		if ent.Status == entryStatusFailed {
-			return ent.Err
+		err := processStatus(ent)
+		if err != nil {
+			return err
 		}
 
 		a.Inode = 1
@@ -63,30 +74,96 @@ func (p path) Attr(ctx context.Context, a *fuse.Attr) error {
 }
 
 
-func (p path) ReadAll(ctx context.Context) ([]byte, error) {
+func (path) ReadDirAll(ctx context.Context) ([]fuse.Dirent, error) {
+	return []fuse.Dirent{}, nil
+}
+
+
+func (p path) Lookup(ctx context.Context, name string) (fs.Node, error) {
+	return newPath(filepath.Join(p.FullPath, name)), nil
+}
+
+
+func (p path) Open(ctx context.Context, req *fuse.OpenRequest, resp *fuse.OpenResponse) (fs.Handle, error) {
 	ent, ok := entries[p.FullPath]
 	if !ok {
 		return nil, fuse.ENOENT
 	}
 
-	for ent.Status == entryStatusProcessing {
-		time.Sleep(10 * time.Millisecond)
+	err := processStatus(ent)
+	if err != nil {
+		return nil, err
+	}
+
+	original := []byte{}
+	// Truncate sometimes
+	if !((req.Flags&fuse.OpenWriteOnly != 0 && req.Flags&fuse.OpenAppend == 0) || req.Flags&fuse.OpenTruncate != 0) {
+		original = ent.Contents
+	}
+
+	var contents []byte
+	if req.Flags.IsReadOnly() {
+		contents = original
+	} else {
+		contents = make([]byte, len(original))
+		copy(contents, original)
 	}
 
 	ent.TTL = DefaultTTL
-	if ent.Status == entryStatusOK {
-		return ent.Contents, nil
-	}
-	return nil, ent.Err
+
+	return pathHandle{
+		Parent:   ent,
+		Name :    p.FullPath,
+		Contents: &contents,
+		Writing:  !req.Flags.IsReadOnly(),
+	}, nil
 }
 
 
-func (p path) Read(ctx context.Context, req *fuse.ReadRequest, resp *fuse.ReadResponse) error {
-	ent, ok := entries[p.FullPath]
-	if !ok {
-		return fuse.ENOENT
+func (h pathHandle) ReadAll(ctx context.Context) ([]byte, error) {
+	h.Parent.TTL = DefaultTTL
+	return *h.Contents, nil
+}
+
+
+func (h pathHandle) Read(ctx context.Context, req *fuse.ReadRequest, resp *fuse.ReadResponse) error {
+	fuseutil.HandleRead(req, resp, *h.Contents)
+	h.Parent.TTL = DefaultTTL
+	return nil
+}
+
+
+func (h pathHandle) Write(ctx context.Context, req *fuse.WriteRequest, resp *fuse.WriteResponse) error {
+	fileLen := len(*h.Contents)
+	reqLen  := len(req.Data)
+	spaceDelta := reqLen - fileLen + int(req.Offset) 
+	
+	if spaceDelta > 0 {
+		oldContents := *h.Contents
+		*h.Contents = make([]byte, fileLen + spaceDelta)
+		copy(*h.Contents, oldContents)
 	}
 
+	copy((*h.Contents)[req.Offset:], req.Data)
+	resp.Size = len(req.Data)
+	return nil
+}
+
+
+func (h pathHandle) Flush(ctx context.Context, req *fuse.FlushRequest) error {
+	if h.Writing && len(*h.Contents) != 0 {
+		name, mods := processPath(h.Name)
+		resp, err := protocolAPI.Write(name, mods, *h.Contents)
+		fmt.Println(string(resp))
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+
+func processStatus(ent *pathEntry) error {
 	for ent.Status == entryStatusProcessing {
 		time.Sleep(10 * time.Millisecond)
 	}
@@ -95,21 +172,7 @@ func (p path) Read(ctx context.Context, req *fuse.ReadRequest, resp *fuse.ReadRe
 		return ent.Err
 	}
 
-	fuseutil.HandleRead(req, resp, ent.Contents)
-
-	ent.TTL = DefaultTTL
-
 	return nil
-}
-
-
-func (path) ReadDirAll(ctx context.Context) ([]fuse.Dirent, error) {
-	return []fuse.Dirent{}, nil
-}
-
-
-func (p path) Lookup(ctx context.Context, name string) (fs.Node, error) {
-	return newPath(filepath.Join(p.FullPath, name)), nil
 }
 
 
@@ -126,11 +189,10 @@ func handleEntry(name string) {
 	ent, ok := entries[name]
 
 	if !ok {
-		entries[name] = &entry{
+		entries[name] = &pathEntry{
 			Contents: []byte{},
 			TTL: DefaultTTL,
 			Status: entryStatusProcessing,
-			Flushed: false,
 		}
 
 		go fillEntry(entries[name], name)
@@ -141,7 +203,7 @@ func handleEntry(name string) {
 }
 
 
-func fillEntry(ent *entry, name string) {
+func fillEntry(ent *pathEntry, name string) {
 	data, err := protocolAPI.Read(processPath(name))
 	if err != nil {
 		ent.Status = entryStatusFailed
