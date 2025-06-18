@@ -15,14 +15,8 @@ var (
 func cacheFlushing() {
 	for {
 		time.Sleep(1 * time.Second)
-
-		for path, ent := range entries {
-			if ent.TTL <= 0 {
-				delete(entries, path)
-			} else {
-				ent.TTL -= 1
-			}
-		}
+		flushStep(entries)
+		flushStep(pidEntries)
 	}
 }
 
@@ -30,5 +24,20 @@ func cacheFlushing() {
 func flushAll() {
 	for path, _ := range entries {
 		delete(entries, path)
+	}
+}
+
+
+func flushStep[K comparable](ent map[K]*pathEntry) {
+	for key, e := range ent {
+		if e.Status == entryStatusProcessing {
+			continue
+		}
+
+		if e.TTL <= 0 {
+			delete(ent, key)
+		} else {
+			e.TTL -= 1
+		}
 	}
 }

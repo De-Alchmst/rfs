@@ -1,7 +1,6 @@
 package rfs
 
 import (
-	"fmt"
 	"path/filepath"
 	"context"
 	"strings"
@@ -35,6 +34,11 @@ type pathEntry struct {
 	Err error
 }
 
+type pidKey struct {
+	PID uint32
+	Name string
+}
+
 
 const (
 	entryStatusOK = iota
@@ -45,6 +49,7 @@ const (
 
 var (
 	entries = map[string]*pathEntry{}
+	pidEntries = map[pidKey]*pathEntry{}
 )
 
 
@@ -54,20 +59,19 @@ func withContext(ctx context.Context, req fuse.Request) context.Context {
 
 
 func (p path) Attr(ctx context.Context, a *fuse.Attr) error {
-	ent, ok := entries[p.FullPath]
+	entry, ok := getEntry(p.FullPath, ctx.Value("PID").(uint32), false)
 	// File
 	if ok { 
-
-		err := processStatus(ent)
+		err := processStatus(entry)
 		if err != nil {
 			return err
 		}
 
 		a.Inode = 1
 		a.Mode = os.ModeIrregular | 0o770
-		a.Size = uint64(len(ent.Contents))
+		a.Size = uint64(len(entry.Contents))
 
-		ent.TTL = DefaultTTL
+		entry.TTL = DefaultTTL
 
 	// Directory
 	} else {
@@ -90,12 +94,12 @@ func (p path) Lookup(ctx context.Context, name string) (fs.Node, error) {
 
 
 func (p path) Open(ctx context.Context, req *fuse.OpenRequest, resp *fuse.OpenResponse) (fs.Handle, error) {
-	ent, ok := entries[p.FullPath]
+	entry, ok := getEntry(p.FullPath, ctx.Value("PID").(uint32), true)
 	if !ok {
 		return nil, fuse.ENOENT
 	}
 
-	err := processStatus(ent)
+	err := processStatus(entry)
 	if err != nil {
 		return nil, err
 	}
@@ -103,7 +107,7 @@ func (p path) Open(ctx context.Context, req *fuse.OpenRequest, resp *fuse.OpenRe
 	original := []byte{}
 	// Truncate sometimes
 	if !((req.Flags&fuse.OpenWriteOnly != 0 && req.Flags&fuse.OpenAppend == 0) || req.Flags&fuse.OpenTruncate != 0) {
-		original = ent.Contents
+		original = entry.Contents
 	}
 
 	var contents []byte
@@ -114,10 +118,10 @@ func (p path) Open(ctx context.Context, req *fuse.OpenRequest, resp *fuse.OpenRe
 		copy(contents, original)
 	}
 
-	ent.TTL = DefaultTTL
+	entry.TTL = DefaultTTL
 
 	return pathHandle{
-		Parent:   ent,
+		Parent:   entry,
 		Name :    p.FullPath,
 		Contents: &contents,
 		Writing:  !req.Flags.IsReadOnly(),
@@ -157,24 +161,56 @@ func (h pathHandle) Write(ctx context.Context, req *fuse.WriteRequest, resp *fus
 
 func (h pathHandle) Flush(ctx context.Context, req *fuse.FlushRequest) error {
 	if h.Writing && len(*h.Contents) != 0 {
-		name, mods := processPath(h.Name)
-		resp, err := protocolAPI.Write(name, mods, *h.Contents)
-		fmt.Println(string(resp))
-		if err != nil {
-			return err
-		}
+		// no need to wait here til communication finishes...
+		entry := createPIDEntry(h.Name, ctx.Value("PID").(uint32))
+
+		go func() {
+			name, mods := processPath(h.Name)
+			resp, err := protocolAPI.Write(name, mods, *h.Contents)
+			if err != nil {
+				entry.Status = entryStatusFailed
+				entry.Err = err
+			} else {
+				entry.Status = entryStatusOK
+				entry.Contents = resp
+			}
+		}()
 	}
 	return nil
 }
 
 
-func processStatus(ent *pathEntry) error {
-	for ent.Status == entryStatusProcessing {
+func getEntry(name string, pid uint32, removePid bool) (*pathEntry, bool) {
+	var (
+		entry *pathEntry
+		ok  bool
+		key pidKey
+	)
+
+	key = pidKey{PID: pid, Name: name}
+
+	entry, ok = pidEntries[key]
+	if !ok {
+		entry, ok = entries[name]
+		if !ok {
+			return nil, false
+		}
+
+	} else if removePid {
+		delete(pidEntries, key)
+	}
+
+	return entry, true
+}
+
+
+func processStatus(entry *pathEntry) error {
+	for entry.Status == entryStatusProcessing {
 		time.Sleep(10 * time.Millisecond)
 	}
 
-	if ent.Status == entryStatusFailed {
-		return ent.Err
+	if entry.Status == entryStatusFailed {
+		return entry.Err
 	}
 
 	return nil
@@ -191,7 +227,7 @@ func newPath(name string) path {
 
 
 func handleEntry(name string) {
-	ent, ok := entries[name]
+	entry, ok := entries[name]
 
 	if !ok {
 		entries[name] = &pathEntry{
@@ -203,21 +239,32 @@ func handleEntry(name string) {
 		go fillEntry(entries[name], name)
 
 	} else {
-		ent.TTL = DefaultTTL
+		entry.TTL = DefaultTTL
 	}
 }
 
 
-func fillEntry(ent *pathEntry, name string) {
+func createPIDEntry(name string, pid uint32) *pathEntry {
+	entry := &pathEntry {
+		Contents: []byte{},
+		Status: entryStatusProcessing,
+		TTL: DefaultTTL,
+	}
+	pidEntries[pidKey{PID: pid, Name: name}] = entry
+	return entry
+}
+
+
+func fillEntry(entry *pathEntry, name string) {
 	data, err := protocolAPI.Read(processPath(name))
 	if err != nil {
-		ent.Status = entryStatusFailed
-		ent.Err = err
+		entry.Status = entryStatusFailed
+		entry.Err = err
 	} else {
-		ent.Status = entryStatusOK
+		entry.Status = entryStatusOK
 	}
 
-	ent.Contents = data
+	entry.Contents = data
 }
 
 
