@@ -2,6 +2,7 @@ package rfs
 
 import (
 	"context"
+	"strings"
 	"os"
 
 	"bazil.org/fuse"
@@ -33,7 +34,7 @@ var (
 				Inode: 1,
 				Name: "flush",
 				OnWrite: func(data []byte) error {
-					command := string(data)
+					command := strings.TrimRight(string(data), "\r\n")
 					if command == ":all" || command == ":a" {
 						flushAll()
 						protocolAPI.FlushAll()

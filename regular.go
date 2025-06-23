@@ -103,7 +103,7 @@ func (f File) Open(ctx context.Context, req *fuse.OpenRequest, resp *fuse.OpenRe
 	return fileHandle{
 		Parent:	  &f,
 		Contents: &contents,
-		Writing:  req.Flags&fuse.OpenWriteOnly == 0,
+		Writing:  !req.Flags.IsReadOnly(),
 	}, nil
 }
 
@@ -137,7 +137,7 @@ func (h fileHandle) Write(ctx context.Context, req *fuse.WriteRequest, resp *fus
 
 
 func (h fileHandle) Flush(ctx context.Context, req *fuse.FlushRequest) error {
-	if h.Writing && len(*h.Contents) != 0{
+	if h.Writing && len(*h.Contents) != 0 {
 		h.Parent.OnWrite(*h.Contents)
 	}
 	return nil

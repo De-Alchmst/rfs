@@ -61,6 +61,7 @@ func withContext(ctx context.Context, req fuse.Request) context.Context {
 
 func (p path) Attr(ctx context.Context, a *fuse.Attr) error {
 	entry, ok := getEntry(p.FullPath, ctx.Value("PID").(uint32), false)
+
 	// File
 	if ok { 
 		err := processStatus(entry)
@@ -89,6 +90,7 @@ func (path) ReadDirAll(ctx context.Context) ([]fuse.Dirent, error) {
 }
 
 
+// Nodes are cached by FUSE
 func (p path) Lookup(ctx context.Context, name string) (fs.Node, error) {
 	return newPath(filepath.Join(p.FullPath, name)), nil
 }
@@ -192,6 +194,10 @@ func getEntry(name string, pid uint32, removePid bool) (*pathEntry, bool) {
 
 	entry, ok = pidEntries[key]
 	if !ok {
+
+		// FUSE does Node chaching, which does not work nicely with /:c/flush
+		// for this reason, I have to 'handleEntry' here
+		handleEntry(name)
 		entry, ok = entries[name]
 		if !ok {
 			return nil, false
@@ -218,6 +224,7 @@ func processStatus(entry *pathEntry) error {
 }
 
 
+// Nodes are cached by FUSE
 func newPath(name string) path {
 	if len(name) > 1 && name[len(name)-1] == ':' {
 		handleEntry(name)
@@ -228,8 +235,11 @@ func newPath(name string) path {
 
 
 func handleEntry(name string) {
+	if name[len(name)-1] != ':' {
+		return
+	}
+	
 	entry, ok := entries[name]
-
 	if !ok {
 		entries[name] = &pathEntry{
 			Contents: []byte{},
