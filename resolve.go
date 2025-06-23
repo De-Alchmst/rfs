@@ -30,7 +30,7 @@ type pathHandle struct {
 type pathEntry struct {
 	Contents []byte
 	TTL int64
-	Status int
+	Status entryStatus
 	Err error
 }
 
@@ -39,9 +39,10 @@ type pidKey struct {
 	Name string
 }
 
+type entryStatus int
 
 const (
-	entryStatusOK = iota
+	entryStatusOK entryStatus = iota
 	entryStatusFailed
 	entryStatusProcessing
 )
@@ -218,7 +219,7 @@ func processStatus(entry *pathEntry) error {
 
 
 func newPath(name string) path {
-	if name[len(name)-1] == ':' {
+	if len(name) > 1 && name[len(name)-1] == ':' {
 		handleEntry(name)
 	}
 
@@ -271,13 +272,16 @@ func fillEntry(entry *pathEntry, name string) {
 func processPath(path string) (string, []string) {
 	mods := []string{}
 	for path[0] == ':' {
-		splits := strings.SplitN(path, "/", 2)
-		if len(splits) == 1 {
+		before, after, found := strings.Cut(path, "/")
+		if !found {
 			break
 		}
 
-		mods = append(mods, splits[0])
-		path = splits[1]
+		// no need to send :nop further
+		if before != ":nop" {
+			mods = append(mods, before)
+		}
+		path = after
 	}
 
 	return path[:len(path)-1], mods

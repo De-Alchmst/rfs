@@ -28,6 +28,11 @@ func flushAll() {
 }
 
 
+func flushName(name string) {
+	delete(entries, name)
+}
+
+
 func flushStep[K comparable](ent map[K]*pathEntry) {
 	for key, e := range ent {
 		if e.Status == entryStatusProcessing {

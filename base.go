@@ -33,7 +33,12 @@ var (
 				Inode: 1,
 				Name: "flush",
 				OnWrite: func(data []byte) error {
-					flushAll()
+					command := string(data)
+					if command == ":all" || command == ":a" {
+						flushAll()
+					} else {
+						flushName(command)
+					}
 					return nil
 				},
 				OnRead: func() ([]byte, error) {
