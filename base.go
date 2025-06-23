@@ -36,8 +36,10 @@ var (
 					command := string(data)
 					if command == ":all" || command == ":a" {
 						flushAll()
+						protocolAPI.FlushAll()
 					} else {
 						flushName(command)
+						protocolAPI.FlushResource(processPath(command))
 					}
 					return nil
 				},

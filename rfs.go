@@ -35,6 +35,8 @@ type DirNode interface {
 type ProtocolAPI interface {
 	Read(address string, modifiers []string) ([]byte, error)
 	Write(address string, modifiers []string, data []byte) ([]byte, error)
+	FlushAll()
+	FlushResource(address string, modifiers []string)
 }
 
 
