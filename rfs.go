@@ -1,9 +1,5 @@
 // Package rfs provides a simple way to implement resolving file systems with FUSE.
 // See: https://github.com/De-Alchmst/resolving-file-system-spec/
-//
-// for example programs using rfs, see:
-// 	- https://github.com/De-Alchmst/webrfs
-// 	- https://github.com/De-Alchmst/gopherrfs
 package rfs
 
 import (

@@ -29,7 +29,7 @@ type pathHandle struct {
 
 type pathEntry struct {
 	Contents []byte
-	TTL int64
+	TTL int
 	Status entryStatus
 	Err error
 }

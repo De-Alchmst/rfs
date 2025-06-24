@@ -10,9 +10,9 @@ import (
 // TTL is periodically reduced and entry is removed when it reaches 0.
 var (
 	// how long between TTL reduction
-	CacheFlushTimeout = 5 * time.Second
+	CacheFlushTimeout time.Duration= 5 * time.Second
 	// How much TTL does an entry have
-	DefaultTTL int64 = 5 * 60 / 5
+	DefaultTTL int = 60
 )
 
 
