@@ -29,7 +29,7 @@ var (
 
 	confContents = []DirNode{
 		&File{
-			Inode: 1,
+			Inode: 0,
 			Name: "flush",
 			OnWrite: func(data []byte) error {
 				command := strings.TrimRight(string(data), "\r\n")
@@ -69,7 +69,7 @@ func (filesystem) Root() (fs.Node, error) {
 
 
 func (root) Attr(ctx context.Context, a *fuse.Attr) error {
-	a.Inode = 1
+	a.Inode = 0
 	a.Mode = os.ModeDir | 0o555
 	return nil
 }

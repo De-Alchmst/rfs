@@ -5,9 +5,13 @@ import (
 )
 
 
+// Rfs caches responses.
+// Each request has a certain amount of TTL, which is replenished when it's used.
+// TTL is periodically reduced and entry is removed when it reaches 0.
 var (
-	// 5 minutes, flushed every 5 seconds
+	// how long between TTL reduction
 	CacheFlushTimeout = 5 * time.Second
+	// How much TTL does an entry have
 	DefaultTTL int64 = 5 * 60 / 5
 )
 
