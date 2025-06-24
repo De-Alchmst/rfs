@@ -26,29 +26,39 @@ type fileHandle struct {
 var (
 	protocolAPI ProtocolAPI
 	rootDir = root{}
-	confDir  = &Dir{
-		Inode: 0,
-		Name: ":c",
-		Contents: []DirNode{
-			&File{
-				Inode: 1,
-				Name: "flush",
-				OnWrite: func(data []byte) error {
-					command := strings.TrimRight(string(data), "\r\n")
-					if command == ":all" || command == ":a" {
-						flushAll()
-						protocolAPI.FlushAll()
-					} else {
-						flushName(command)
-						protocolAPI.FlushResource(processPath(command))
-					}
-					return nil
-				},
-				OnRead: func() ([]byte, error) {
-					return []byte("write stuff to flush cache\n"), nil
-				},
+
+	confContents = []DirNode{
+		&File{
+			Inode: 1,
+			Name: "flush",
+			OnWrite: func(data []byte) error {
+				command := strings.TrimRight(string(data), "\r\n")
+				if command == ":all" || command == ":a" {
+					flushAll()
+					protocolAPI.FlushAll()
+				} else {
+					flushName(command)
+					protocolAPI.FlushResource(processPath(command))
+				}
+				return nil
+			},
+			OnRead: func() ([]byte, error) {
+				return []byte("write stuff to flush cache\n"), nil
 			},
 		},
+	}
+
+
+	cDir  = &Dir{
+		Inode: 0,
+		Name: ":c",
+		Contents: confContents,
+	}
+
+	configDir  = &Dir{
+		Inode: 0,
+		Name: ":config",
+		Contents: confContents,
 	}
 )
 
@@ -66,13 +76,13 @@ func (root) Attr(ctx context.Context, a *fuse.Attr) error {
 
 
 func (root) Lookup(ctx context.Context, name string) (fs.Node, error) {
-	if name == ":c" {
-		return confDir, nil
+	if name == ":c" || name == ":config"{
+		return configDir, nil
 	}
 	return newPath(name), nil
 }
 
 
 func (root) ReadDirAll(ctx context.Context) ([]fuse.Dirent, error) {
-	return []fuse.Dirent{confDir.GetDirEnt()}, nil
+	return []fuse.Dirent{cDir.GetDirEnt(), configDir.GetDirEnt()}, nil
 }

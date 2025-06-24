@@ -43,7 +43,7 @@ type ProtocolAPI interface {
 func MountFS(mountpoint, fsName, fsSubtype string, confs []DirNode, api ProtocolAPI) error {
 	protocolAPI = api
 	for _, node := range confs {
-		confDir.Contents = append(confDir.Contents, node)
+		configDir.Contents = append(configDir.Contents, node)
 	}
 
 	c, err := fuse.Mount(
